@@ -8,7 +8,7 @@ from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.svm import SVC, LinearSVC, NuSVC
 from nltk.classify import ClassifierI
 from statistics import mode
-
+from nltk.tokenize import word_tokenize
 
 class VoteClassifier(ClassifierI):
     # init will run first and all other methods will not run unless called
@@ -32,23 +32,24 @@ class VoteClassifier(ClassifierI):
         conf = choice_votes / len(votes)
         return conf
 
-# one line for loop creating a list of documents (tuples)
-# of movie reviews in corpus.movie_reviews
-# documents are testing sets
-documents = [(list(movie_reviews.words(fileid)), category)
-             for category in movie_reviews.categories()
-             for fileid in movie_reviews.fileids(category)]
+short_pos = open("short_reviews/positive.txt", "r").read()
+short_neg = open("short_reviews/negative.txt", "r").read()
 
-# shuffle list to reduce bias
-# note, no longer shuffling in favour of more data to train from
-#random.shuffle(documents)
+# PICKLE documents for speed increase
+documents = []
+for r in short_pos.split('\n'):
+    documents.append((r, "pos"))
+for r in short_neg.split('\n'):
+    documents.append((r, "neg"))
 
-# create a new list consisting of all words in movie_reviews
+# PICKLE all_words for speed increase
 all_words = []
-# add all words from movie_reviews into list all_words
-# later on will use features of list documents (above ^^)
-# to compare pos/neg
-for w in movie_reviews.words():
+short_pos_words = word_tokenize(short_pos)
+short_neg_words = word_tokenize(short_neg)
+
+for w in short_pos_words:
+    all_words.append(w.lower())
+for w in short_neg_words:
     all_words.append(w.lower())
 
 # convert list all_words to nltk frequency distribution
@@ -64,15 +65,15 @@ print(all_words.most_common(15))
 print the frequency of the words stupid in corpus:
 print(all_words["stupid"])
 """
-# use up to the top 3000 words to train against
-word_features = [w for (w, c) in all_words.most_common(3000)]
+# use up to the top 5000 words to train against
+word_features = [w for (w, c) in all_words.most_common(5000)]
 
 
 def find_features(document):
     # each word will be included, but no duplicates in the set
-    words = set(document)
+    words = word_tokenize(document)
     features = {}
-    # for each word in the top 3000 words
+    # for each word in the top 5000 words
     for w in word_features:
         # create boolean of t or f
         features[w] = (w in words)
@@ -83,24 +84,28 @@ def find_features(document):
 # each of those words. This builds what we can train against,
 # or, the existence of words and their impact on whether the review
 # is pos/neg
+# PICKLE featuresets for speed increase
 featuresets = [(find_features(rev), category) for (rev, category) in documents]
 
-# for positive data:
-# train against the first 1900 words
-training_set = featuresets[:1900]
-# test against the next 1900 words
-testing_set = featuresets[1900:]
+# shuffle data to lower bias
+random.shuffle(featuresets)
 
-# for negative data:
-# train against the 100th and onward word
-training_set = featuresets[100:]
-# test against up to the 100th word
-testing_set = featuresets[:100]
+# for positive data:
+# train against the first 10000 words
+training_set = featuresets[:10000]
+# test against the next 1900 words
+testing_set = featuresets[10000:]
+
+# # for negative data:
+# # train against the 100th and onward word
+# training_set = featuresets[100:]
+# # test against up to the 100th word
+# testing_set = featuresets[:100]
 
 # using naive bayes algorithm:
 # posterior = (prior occurences * likelihood) / evidence
 # very fast and scalable
-#classifier = nltk.NaiveBayesClassifier.train(training_set)
+classifier = nltk.NaiveBayesClassifier.train(training_set)
 
 """
 Pickle Creation:
@@ -111,13 +116,13 @@ pickle._dump(classifier, save_classifier)
 save_classifier.close()
 """
 
-# use saved pickle classifier profile rather than a new one
-classifier_f = open("naivebayes.pickle", "rb")
-classifier = pickle.load(classifier_f)
-classifier_f.close()
+# # use saved pickle classifier profile rather than a new one
+# classifier_f = open("naivebayes.pickle", "rb")
+# classifier = pickle.load(classifier_f)
+# classifier_f.close()
 
 # Run all seven classifiers and print their accuracy score:
-
+# PICKLE all classifiers individually for speed increase
 print("OG Naive Bayes algorithm accuracy percent:", (nltk.classify.accuracy(classifier, testing_set)) * 100)
 classifier.show_most_informative_features(15)
 
@@ -125,6 +130,7 @@ MultinomialNB_classifier = SklearnClassifier(MultinomialNB())
 MultinomialNB_classifier.train(training_set)
 print("MNB_classifier algorithm accuracy percent:", (nltk.classify.accuracy(MultinomialNB_classifier, testing_set)) * 100)
 
+# something is wrong with this classifier, gives exactly 50% every run through
 # GaussianNB_classifier = SklearnClassifier(GaussianNB())
 # GaussianNB_classifier.train(training_set)
 # print("GaussianNB_classifier algorithm accuracy percent:", (nltk.classify.accuracy(GaussianNB_classifier, testing_set)) * 100)
@@ -162,7 +168,7 @@ voted_classifier = VoteClassifier(classifier,
                                   SGDClassifier_classifier,
                                   LinearSVC_classifier,
                                   NuSVC_classifier)
-print("voted classifier accuracy percent:", (nltk.classify.accuracy(voted_classifier, testing_set)) * 100)
+print("Voted classifier accuracy percent:", (nltk.classify.accuracy(voted_classifier, testing_set)) * 100)
 
 # testing_set is a dictionary containing t/f examples of pos/neg words.
 # passes those testing_set words through find_features
